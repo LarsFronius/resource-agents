@@ -42,8 +42,8 @@
 #######################################################################
 # Initialization:
 
-: ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/resource.d/heartbeat}
-. ${OCF_FUNCTIONS_DIR}/.ocf-shellfuncs
+: ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/lib/heartbeat}
+. ${OCF_FUNCTIONS_DIR}/ocf-shellfuncs
 
 #######################################################################
 
@@ -216,9 +216,6 @@ k5start_stop() {
 }
 
 k5start_monitor() {
-    # Monitor _MUST!_ differentiate correctly between running
-    # (SUCCESS), failed (ERROR) or _cleanly_ stopped (NOT RUNNING).
-    # That is THREE states, not just yes/no.
     local rc
     if [ -f ${HA_RSCTMP}/k5start-${OCF_RESOURCE_INSTANCE}.pid ]; then 
         ps -p `cat ${HA_RSCTMP}/k5start-${OCF_RESOURCE_INSTANCE}.pid`
@@ -239,32 +236,6 @@ k5start_monitor() {
     else
         return $OCF_NOT_RUNNING
     fi
-#    local pid
-#    ocf_log debug "wtf1"
-#    if [ -f ${HA_RSCTMP}/k5start-${OCF_RESOURCE_INSTANCE}.pid ]; then
-#        pid=ps -p `cat ${HA_RSCTMP}/k5start-${OCF_RESOURCE_INSTANCE}.pid`
-#    ocf_log debug "wtf2"
-#    else
-#        pid=return false
-#    ocf_log debug "wtf3"
-#    fi
-#    if [ -f ${OCF_RESKEY_state} ]; then
-#        if [ $pid ] && [ -f $OCF_RESKEY_ticketpath ] && [ -f $OCF_RESKEY_keytab ]; then
-#            ocf_log debug "wtf2"
-#            return $OCF_SUCCESS
-#        else
-#    ocf_log debug "wtf4"
-#            return $OCF_ERR_GENERIC
-#        fi
-#    else
-#        if ! [ -f {HA_RSCTMP}/k5start-${OCF_RESOURCE_INSTANCE}.pid ] && ! [ $pid ]; then
-#    ocf_log debug "wtf5"
-#            return $OCF_NOT_RUNNING
-#        else
-#    ocf_log debug "wtf6"
-#            return $OCF_ERR_GENERIC
-#        fi
-#    fi
 }
 
 k5start_validate() {
