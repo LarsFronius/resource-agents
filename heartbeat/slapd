@@ -196,7 +196,25 @@ SIGKILL
 <shortdesc lang="en">Seconds before stop escalation to KILL</shortdesc>
 <content type="integer" default="15" />
 </parameter>
+
+<parameter name="krb5_ktname" unique="0" required="0">
+<longdesc lang="en">
+Path to keytab, which may be used to authenticate slapd during 
+syncreplication.
+</longdesc>
+<shortdesc lang="en">Path to keytab</shortdesc>
+<content type="string" />
+</parameter>
+
+<parameter name="krb5ccname" unique="0" required="0">
+<longdesc lang="en">
+Path to Kerberos-Ticket-Cache which should be used by slapd.
+</longdesc> 
+<shortdesc lang="en">Path to Kerberos Ticket Cache</shortdesc>
+<content type="string" />
+</parameter>
 </parameters>
+
 
 <actions>
 <action name="start"   timeout="20s" />
@@ -299,6 +317,14 @@ slapd_start()
   local reason
   local result
   local state
+
+  if [ -n "$OCF_RESKEY_krb5_ktname" ];then
+    export KRB5_KTNAME="$OCF_RESKEY_krb5_ktname"
+  fi
+
+  if [ -n "$OCF_RESKEY_krb5ccname" ];then
+    export KRB5CCNAME="$OCF_RESKEY_krb5ccname"
+  fi
 
   slapd_status `slapd_pid`; state=$?
 
@@ -456,6 +482,12 @@ slapd_validate_all()
 {
   check_binary "$slapd"
   check_binary "$ldapsearch"
+
+  if [ -n "$OCF_RESKEY_krb5_ktname" ];then
+    if ! [ -f "$OCF_RESKEY_krb5_ktname" ];then
+      ocf_log err "Kerberos 5 Keytab '$OCF_RESKEY_krb5_ktname' doesn't exist."
+    fi
+  fi
 
   if [ -z "$pid_file" ]; then
     if [ -d "$config" ]; then

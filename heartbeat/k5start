@@ -241,6 +241,21 @@ k5start_monitor() {
 k5start_validate() {
     check_binary $OCF_RESKEY_binary
 
+    if ! [ -f "$OCF_RESKEY_keytab" ]
+        ocf_log err "Kerberos 5 Keytab '$OCF_RESKEY_keytab' is not a file"
+    fi
+    
+    if [ -n "$OCF_RESKEY_owner" ];then
+        if ! [ $(id -u $OCF_RESKEY_owner) ]; then
+            ocf_log err "'$OCF_RESKEY_owner' is not a user"
+        fi
+    fi
+    if [ -n "$OCF_RESKEY_group" ];then
+        if ! [ $(id -g $OCF_RESKEY_group) ]; then
+            ocf_log err "'$OCF_RESKEY_group' is not a group"
+        fi
+    fi
+
     # Is the state directory writable? 
     state_dir=`dirname "$OCF_RESKEY_state"`
     touch "$state_dir/$$"
