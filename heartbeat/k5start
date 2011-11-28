@@ -241,7 +241,7 @@ k5start_monitor() {
 k5start_validate() {
     check_binary $OCF_RESKEY_binary
 
-    if ! [ -f "$OCF_RESKEY_keytab" ]
+    if ! [ -f "$OCF_RESKEY_keytab" ];then
         ocf_log err "Kerberos 5 Keytab '$OCF_RESKEY_keytab' is not a file"
     fi
     
