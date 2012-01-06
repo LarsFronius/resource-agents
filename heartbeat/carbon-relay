@@ -1,0 +1,251 @@
+#!/bin/bash
+#
+#   carbonrelay
+#
+#
+#   Description: carbonrelay OCF RA. It can obtain tickets from keytabs 
+#   and write them into ticket caches. You might find it useful if you 
+#   want to do NFSv4 mounts using kerberos authentication or
+#   have your slapd replication authenticated through kerberos tickets.
+#
+#   Authors:    Lars Fronius (l.fronius@googlemail.com/@LarsFronius)
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of version 2 of the GNU General Public License as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it would be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+#
+# Further, this software is distributed without any warranty that it is
+# free of the rightful claim of any third person regarding infringement
+# or the like.  Any license provided herein, whether implied or
+# otherwise, applies only to this software file.  Patent licenses, if
+# any, provided herein do not apply to combinations of this program with
+# other software, or any other product whatsoever.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write the Free Software Foundation,
+# Inc., 59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
+#
+# See usage() function below for more details...
+#
+# OCF instance parameters:
+#   OCF_RESKEY_binary
+#   OCF_RESKEY_keytab
+#   OCF_RESKEY_ticketpath
+#   OCF_RESKEY_owner
+#   OCF_RESKEY_group
+#   OCF_RESKEY_principal
+
+#######################################################################
+# Initialization:
+
+: ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/resource.d/heartbeat}
+. ${OCF_FUNCTIONS_DIR}/.ocf-shellfuncs
+
+#######################################################################
+
+# Fill in some defaults if no values are specified
+OCF_RESKEY_binary_default="/usr/bin/carbon-relay.py"
+# Maybe this should also get variables from env
+
+: ${OCF_RESKEY_binary=${OCF_RESKEY_binary_default}}
+
+meta_data() {
+    cat <<END
+<?xml version="1.0"?>
+<!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
+<resource-agent name="carbonrelay">
+<version>0.1</version>
+
+<longdesc lang="en">
+This is a Resource Agent for carbon-relay. 
+</longdesc>
+<shortdesc lang="en">carbon-relay resource agent</shortdesc>
+
+<parameters>
+
+<parameter name="binary" unique="0" required="0">
+<longdesc lang="en">
+Path to carbon-relay binary.
+</longdesc>
+<shortdesc lang="en">Path to carbon-relay binary</shortdesc>
+<content type="string" default="${OCF_RESKEY_binary_default}" />
+</parameter>
+
+</parameters>
+
+<actions>
+<action name="start"        timeout="20" />
+<action name="stop"         timeout="20" />
+<action name="monitor"      timeout="20" interval="10" depth="0" />
+<action name="reload"       timeout="20" />
+<action name="migrate_to"   timeout="20" />
+<action name="migrate_from" timeout="20" />
+<action name="meta-data"    timeout="5" />
+<action name="validate-all"   timeout="20" />
+</actions>
+</resource-agent>
+END
+return 0
+}
+
+#######################################################################
+
+read_defaults() {
+    echo $(python << EOF
+import ConfigParser
+config = ConfigParser.ConfigParser()
+config.read("/etc/carbon/carbon.conf")
+print config.get("DEFAULT","$1");
+EOF
+)
+}
+
+getport () {
+CARBON=$(echo ${NAME} | cut -d '-' -f 2)
+python << EOF
+import ConfigParser
+config = ConfigParser.ConfigParser()
+config.read("/etc/carbon/carbon.conf")
+print config.get("relay","$1");
+EOF
+}
+
+carbonrelay_options() {
+    local options
+    options="--pidfile=${HA_RSCTMP}/carbonrelay-${OCF_RESOURCE_INSTANCE}.pid "
+    echo $options
+    return 0
+}
+
+carbonrelay_usage() {
+    cat <<END
+usage: $0 {start|stop|monitor|migrate_to|migrate_from|validate-all|meta-data}
+
+Expects to have a fully populated OCF RA-compliant environment set.
+END
+}
+
+carbonrelay_start() {
+    local options
+    local options=$(carbonrelay_options)
+    if carbonrelay_monitor;then
+        ocf_log info "Resource is already running"
+        return $OCF_SUCCESS
+    else
+        if [ -f ${HA_RSCTMP}/carbonrelay-${OCF_RESOURCE_INSTANCE}.pid ]; then
+            rm ${HA_RSCTMP}/carbonrelay-${OCF_RESOURCE_INSTANCE}.pid
+        fi
+        ocf_run ${OCF_RESKEY_binary} $options start || exit $OCF_ERR_GENERIC
+    fi
+    touch ${OCF_RESKEY_state}
+}
+
+carbonrelay_stop() {
+    local pid
+    local options=$(carbonrelay_options)
+    pid=`cat ${HA_RSCTMP}/carbonrelay-${OCF_RESOURCE_INSTANCE}.pid`
+    carbonrelay_monitor
+    if [ $? =  $OCF_SUCCESS ]; then
+        ocf_run ${OCF_RESKEY_binary} $options stop || exit $OCF_ERR_GENERIC
+        rm ${OCF_RESKEY_state}
+    fi
+    return $OCF_SUCCESS
+}
+
+carbonrelay_monitor() {
+    local rc
+    local running=0
+    local counter=0
+    if [ -f ${HA_RSCTMP}/carbonrelay-${OCF_RESOURCE_INSTANCE}.pid ]; then 
+        ps -p `cat ${HA_RSCTMP}/carbonrelay-${OCF_RESOURCE_INSTANCE}.pid`
+        local CARBON_PICKLE_RECEIVER_PORT=$(getport "PICKLE_RECEIVER_PORT")
+        local CARBON_LINE_RECEIVER_PORT=$(getport "LINE_RECEIVER_PORT")
+        for PORT in $CARBON_relay_QUERY_PORT $CARBON_PICKLE_RECEIVER_PORT $CARBON_LINE_RECEIVER_PORT; do
+            fuser -n tcp $PORT > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                ((running++))
+                ocf_log err "Port $PORT has not been assigned, which it should according to /etc/carbon/carbon.conf"
+            fi
+            ((counter++))
+        done
+        if [ $counter -eq $running ]; then
+            rc=$OCF_SUCCESS
+            ocf_log debug "Resource is running"
+        elif [ $running -eq 0 ]; then
+             rc=$OCF_NOT_RUNNING
+             ocf_log debug "Resource is not running"
+        else
+             ocf_log err "Resource has failed"
+             exit $OCF_ERR_GENERIC
+        fi
+        return $rc
+    else
+        return $OCF_NOT_RUNNING
+    fi
+}
+
+carbonrelay_validate() {
+    check_binary $OCF_RESKEY_binary
+    local CARBON_USER=$(read_defaults USER)
+    local STORAGE_DIR=$(read_defaults STORAGE_DIR)
+    local CONF_DIR=$(read_defaults CONF_DIR)
+    local LOG_DIR=$(read_defaults LOG_DIR)
+
+    if [ -n $CARBON_USER ]; then
+        if [ -z "`getent group $CARBON_USER`" ]; then
+            ocf_log err "'$CARBON_USER' is not a user"
+        fi
+    fi
+    
+    for DIR in $STORAGE_DIR $CONF_DIR $LOG_DIR; do
+        su $CARBON_USER -c "touch $DIR/file"
+        if [ $? -ne 0 ]; then
+            ocf_log err "'$DIR' is not writable for $CARBON_USER"
+        fi
+    done
+
+    # Is the state directory writable? 
+    state_dir=`dirname "$OCF_RESKEY_state"`
+    touch "$state_dir/$$"
+    if [ $? != 0 ]; then
+    return $OCF_ERR_ARGS
+    fi
+    rm "$state_dir/$$"
+
+    return $OCF_SUCCESS
+}
+
+: ${OCF_RESKEY_state=${HA_RSCTMP}/carbonrelay-${OCF_RESOURCE_INSTANCE}.state}
+: ${OCF_RESKEY_fake="carbonrelay"}
+
+case $__OCF_ACTION in
+meta-data)  meta_data
+        exit $OCF_SUCCESS
+        ;;
+start)      carbonrelay_start;;
+stop)       carbonrelay_stop;;
+monitor)    carbonrelay_monitor;;
+migrate_to) ocf_log info "Migrating ${OCF_RESOURCE_INSTANCE} to ${OCF_RESKEY_CRM_meta_migrate_target}."
+            carbonrelay_stop
+        ;;
+migrate_from)   ocf_log info "Migrating ${OCF_RESOURCE_INSTANCE} from ${OCF_RESKEY_CRM_meta_migrate_source}."
+            carbonrelay_start
+        ;;
+reload)     ocf_log info "Reloading ${OCF_RESOURCE_INSTANCE} ..."
+        ;;
+validate-all)   carbonrelay_validate;;
+usage|help) carbonrelay_usage
+        exit $OCF_SUCCESS
+        ;;
+*)      carbonrelay_usage
+        exit $OCF_ERR_UNIMPLEMENTED
+        ;;
+esac
+rc=$?
+ocf_log debug "${OCF_RESOURCE_INSTANCE} $__OCF_ACTION : $rc"
+exit $rc
+
