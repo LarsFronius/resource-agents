@@ -3,10 +3,8 @@
 #   carbonrelay
 #
 #
-#   Description: carbonrelay OCF RA. It can obtain tickets from keytabs 
-#   and write them into ticket caches. You might find it useful if you 
-#   want to do NFSv4 mounts using kerberos authentication or
-#   have your slapd replication authenticated through kerberos tickets.
+#   Description: carbon-relay OCF RA. It can start and monitor carbon-
+#   relay and migrate it through a pacemaker cluster.
 #
 #   Authors:    Lars Fronius (l.fronius@googlemail.com/@LarsFronius)
 #
